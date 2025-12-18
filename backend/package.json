@@ -1,0 +1,22 @@
+{
+  "name": "drone-map-backend",
+  "version": "0.1.0",
+  "description": "Simple HTTP-to-MQTT bridge for bee_map",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "mqtt": "^5.3.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
