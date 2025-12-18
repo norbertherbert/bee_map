@@ -1,8 +1,8 @@
 # custom configs
 public/config.json
 backend/.env
-example.json
-example1.json
+public/config*.json
+__*
 
 # Logs
 logs

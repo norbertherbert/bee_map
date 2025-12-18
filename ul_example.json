@@ -1,0 +1,35 @@
+{
+    "DevEUI_location": {
+        "DevEUI": "20635ff200007e8a",
+        "DevAddr": "0034C69D",
+        "Lrcid": "00000201",
+        "NwGeolocAlgo": 2,
+        "NwGeolocAlgoUsed": 1,
+        "ModelCfg": "0",
+        "Time": "2025-12-18T14:52:04.280+00:00",
+        "DevLocTime": "2025-12-18T14:52:04.280+00:00",
+        "DevLAT": 48.8566,
+        "DevLON": 2.3422,
+        "DevAlt": 0,
+        "DevLocRadius": 2500,
+        "DevAltRadius": 0,
+        "DevUlFCntUpUsed": 11116,
+        "DevLocDilution": 10,
+        "DevAltDilution": 0,
+        "DevNorthVel": 0,
+        "DevEastVel": 0,
+        "CustomerID": "100052417",
+        "CustomerData": {
+            "loc": null,
+            "alr": {
+                "pro": "ABEE/APY",
+                "ver": "1"
+            },
+            "tags": [],
+            "doms": [],
+            "name": "MO4",
+            "lrrID": null,
+            "rfProbe": null
+        }
+    }
+}
