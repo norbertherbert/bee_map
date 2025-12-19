@@ -1,34 +1,30 @@
 import { useEffect, useRef, useState } from 'react';
+import * as L from 'leaflet';
+import type { LayerGroup as LeafletLayerGroup } from 'leaflet';
+import type { Feature, Geometry, GeoJsonObject, GeoJsonProperties } from 'geojson';
+import 'leaflet/dist/leaflet.css';
 import {
-  MapContainer,
-  TileLayer,
-  Marker,
-  Popup,
-  // ZoomControl,
-  LayersControl,
-  LayerGroup,
-  Polyline,
-  useMap,
-  ScaleControl,
+  MapContainer, TileLayer, Marker, Popup,
+  LayerGroup, LayersControl, ScaleControl, // ZoomControl, 
+  Polyline, Circle, GeoJSON, useMap, 
 } from 'react-leaflet';
 import { Badge, Button, Card, Label, TextInput, type CardTheme, type TextInputTheme } from 'flowbite-react';
-import 'leaflet/dist/leaflet.css';
-import * as L from 'leaflet';
 import mqtt, { type MqttClient } from 'mqtt';
 
 type Gateway = { id: string; coords: [number, number] };
 type AppConfig = {
+  zoomLevel?: number;
   mapCenter?: [number, number];
   gateways?: Gateway[];
   mqttUrl?: string;
   mqttTopic?: string;
 };
 
+const DEFAULT_ZOOM_LEVEL: number = 13;
 const DEFAULT_MAP_CENTER: [number, number] = [48.8566, 2.3522]; // Paris
-const DEFAULT_GATEWAYS: Gateway[] = [];
-
 const DEFAULT_MQTT_URL = 'wss://test.mosquitto.org:8081/mqtt';
 const DEFAULT_TOPIC = 'bee_map/#';
+
 const INITIAL_CONNECTION_DELAY = 500;
 const MQTT_OPTIONS = {
   protocolVersion: 4 as const,
@@ -44,13 +40,15 @@ const defaultIcon = new L.Icon({
   iconSize: [25, 41],
   iconAnchor: [12, 41],
 });
-const gatewayIcon = new L.Icon({
+
+const fixedObjectsIcon = new L.Icon({
   iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
   iconRetinaUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
   iconSize: [25, 41],
   iconAnchor: [12, 41],
 });
+
 const oldIcon = new L.Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -84,7 +82,7 @@ type Position = {
   // devLat: number;
   // devLon: number;
   // devAlt: number;
-  // devLocRadius: number;
+  devLocRadius: number;
   // devLocTime: string;
   receivedAt?: string;
   receivedAtTs?: number;
@@ -135,6 +133,14 @@ const compactCardTheme: DeepPartial<CardTheme> = {
   },
 };
 
+function ZoomLevelUpdater({ level }: { level: number }) {
+  const map = useMap();
+  useEffect(() => {
+    map.setZoom(level);
+  }, [level, map]);
+  return null;
+}
+
 function MapCenterUpdater({ center }: { center: [number, number] }) {
   const map = useMap();
   useEffect(() => {
@@ -153,13 +159,20 @@ function MapRefSetter({ onReady }: { onReady: (map: L.Map) => void }) {
 
 export function MapView() {
   const [markers, setMarkers] = useState<Position[]>(initialPositions);
+  const [zoomLevel, setZoomLevel] = useState<number>(DEFAULT_ZOOM_LEVEL);
   const [mapCenter, setMapCenter] = useState<[number, number]>(DEFAULT_MAP_CENTER);
-  const [gateways, setGateways] = useState<Gateway[]>(DEFAULT_GATEWAYS);
+  const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
+  const [historyVisible, setHistoryVisible] = useState<boolean>(true);
+  const [latestVisible, setLatestVisible] = useState<boolean>(false);
+  const [fixedObjects, setFixedObjects] = useState<GeoJsonObject | null>(null);
+  const [fixedObjectsError, setFixedObjectsError] = useState<string | null>(null);
   const [status, setStatus] = useState<string>('connecting');
   const [lastError, setLastError] = useState<string | null>(null);
   const [topic, setTopic] = useState<string>(DEFAULT_TOPIC);
   const [brokerUrl, setBrokerUrl] = useState<string>(DEFAULT_MQTT_URL);
   const mapRef = useRef<L.Map | null>(null);
+  const historyLayerRef = useRef<LeafletLayerGroup | null>(null);
+  const latestLayerRef = useRef<LeafletLayerGroup | null>(null);
   const controlsRef = useRef<HTMLDivElement | null>(null);
   const clientRef = useRef<MqttClient | null>(null);
   const activeRef = useRef<boolean>(true);
@@ -192,25 +205,13 @@ export function MapView() {
           setTopic(config.mqttTopic);
           lastSubscribedTopicRef.current = config.mqttTopic;
         }
-
+        if (typeof config.zoomLevel === 'number' && config.zoomLevel > 0) {
+          setZoomLevel(config.zoomLevel);
+        }
         if (Array.isArray(config.mapCenter) && config.mapCenter.length === 2) {
           const [lat, lon] = config.mapCenter;
           if (typeof lat === 'number' && typeof lon === 'number') {
             setMapCenter([lat, lon]);
-          }
-        }
-
-        if (Array.isArray(config.gateways)) {
-          const validGateways = config.gateways.filter(
-            (gw): gw is Gateway =>
-              !!gw &&
-              typeof gw.id === 'string' &&
-              Array.isArray(gw.coords) &&
-              gw.coords.length === 2 &&
-              gw.coords.every(coord => typeof coord === 'number'),
-          );
-          if (validGateways.length > 0) {
-            setGateways(validGateways);
           }
         }
       })
@@ -218,6 +219,30 @@ export function MapView() {
         console.error('Config load error', err);
       });
 
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const base = import.meta.env.BASE_URL || '/';
+    const geoUrl = new URL('fixed_objects.geojson', window.location.origin + base).toString();
+    fetch(geoUrl)
+      .then(resp => {
+        if (!resp.ok) throw new Error(`Failed to load fixed_objects.geojson (${resp.status})`);
+        return resp.json() as Promise<GeoJsonObject>;
+      })
+      .then(data => {
+        if (cancelled) return;
+        setFixedObjects(data);
+        setFixedObjectsError(null);
+      })
+      .catch(err => {
+        if (cancelled) return;
+        console.error('Fixed objects load error', err);
+        setFixedObjectsError(err?.message ?? 'Failed to load fixed_objects.geojson');
+      });
     return () => {
       cancelled = true;
     };
@@ -299,7 +324,7 @@ export function MapView() {
             // devLat: msg.DevLat,
             // devLon: msg.DevLon,
             // devAlt: msg.DevAlt,
-            // devLocRadius: msg.DevLocRadius,         // Always included DevEUI_location, optionally in DevEUI_uplink
+            devLocRadius: msg.DevLocRadius,         // Always included DevEUI_location, optionally in DevEUI_uplink
             // devLocTime: msg.DevLocTime,             // Optionally included in DevEUI_location, always in DevEUI_uplink
             receivedAt,
             receivedAtTs,
@@ -386,6 +411,17 @@ export function MapView() {
   }
   const latestMarker = sortedMarkers[sortedMarkers.length - 1];
   const latestId = latestMarker?.id;
+  const circlePathOptions = { color: '#2563eb', weight: 1, fillColor: '#60a5fa', fillOpacity: 0.25 };
+  const onEachFixedObjectFeature = (feature: Feature<Geometry, GeoJsonProperties>, layer: L.Layer) => {
+    const props = feature.properties as Record<string, unknown> | null;
+    const name = typeof props?.name === 'string' ? props.name : null;
+    if (name && name.trim().length > 0) {
+      layer.bindPopup(name);
+    }
+  };
+  const pointToLayerFixedObject = (_feature: Feature<Geometry, GeoJsonProperties>, latlng: L.LatLng) => {
+    return L.marker(latlng, { icon: fixedObjectsIcon });
+  };
 
   // Resubscribe when topic changes and client is connected
   useEffect(() => {
@@ -438,15 +474,43 @@ export function MapView() {
     };
   }, []);
 
+  useEffect(() => {
+    const map = mapInstance;
+    if (!map) return;
+
+    const handleOverlayAdd = (e: L.LayersControlEvent) => {
+      if (e.layer === historyLayerRef.current) setHistoryVisible(true);
+      if (e.layer === latestLayerRef.current) setLatestVisible(true);
+    };
+    const handleOverlayRemove = (e: L.LayersControlEvent) => {
+      if (e.layer === historyLayerRef.current) setHistoryVisible(false);
+      if (e.layer === latestLayerRef.current) setLatestVisible(false);
+    };
+
+    map.on('overlayadd', handleOverlayAdd);
+    map.on('overlayremove', handleOverlayRemove);
+
+    return () => {
+      map.off('overlayadd', handleOverlayAdd);
+      map.off('overlayremove', handleOverlayRemove);
+    };
+  }, [mapInstance]);
+
   return (
     <MapContainer
       center={mapCenter}
-      zoom={12}
+      zoom={zoomLevel}
       style={{ height: '100vh', width: '100%' }}
       zoomControl={false}
     >
       <MapCenterUpdater center={mapCenter} />
-      <MapRefSetter onReady={map => { mapRef.current = map; }} />
+      <ZoomLevelUpdater level={zoomLevel} />
+      <MapRefSetter
+        onReady={map => {
+          mapRef.current = map;
+          setMapInstance(map);
+        }}
+      />
       <ScaleControl position="bottomright" />
       <LayersControl position="topright">
         <LayersControl.BaseLayer checked name="Streets">
@@ -461,8 +525,21 @@ export function MapView() {
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
           />
         </LayersControl.BaseLayer>
-        <LayersControl.Overlay name="Latest location">
+        <LayersControl.Overlay checked name="Fixed objects">
           <LayerGroup>
+            {fixedObjects ? (
+              <GeoJSON
+                key="fixed-objects"
+                data={fixedObjects}
+                onEachFeature={onEachFixedObjectFeature}
+                pointToLayer={pointToLayerFixedObject}
+                style={() => ({ color: '#16a34a', weight: 2, fillColor: '#16a34a', fillOpacity: 0.2 })}
+              />
+            ) : null}
+          </LayerGroup>
+        </LayersControl.Overlay>
+        <LayersControl.Overlay name="Latest location">
+          <LayerGroup ref={latestLayerRef}>
             {sortedMarkers.length > 0 ? (
               <Marker
                 key={`latest-${sortedMarkers[sortedMarkers.length - 1].id}`}
@@ -483,8 +560,8 @@ export function MapView() {
             ) : null}
           </LayerGroup>
         </LayersControl.Overlay>
-        <LayersControl.Overlay checked name="History">
-          <LayerGroup>
+        <LayersControl.Overlay checked name="History (markers)">
+          <LayerGroup ref={historyLayerRef}>
             {markers.map(p => (
               <Marker
                 key={p.id}
@@ -504,30 +581,38 @@ export function MapView() {
             ))}
           </LayerGroup>
         </LayersControl.Overlay>
-        <LayersControl.Overlay checked name="Lines">
+        <LayersControl.Overlay checked name="History (lines)">
           <LayerGroup>
             {segments.map((segment, idx) => (
               <Polyline key={`seg-${idx}`} positions={segment} color="#f05454" weight={3} />
             ))}
           </LayerGroup>
         </LayersControl.Overlay>
-
-
-        <LayersControl.Overlay checked name="Gateways">
+        <LayersControl.Overlay checked name="Accuracy radius">
           <LayerGroup>
-            {gateways.map(gateway => (
-              <Marker key={`gateway-${gateway.id}`} position={gateway.coords} icon={gatewayIcon}>
-                <Popup>
-                  <div style={{ minWidth: 140 }}>
-                    <strong>{`Gw: ${gateway.id}`}</strong>
-                    <br />
-                    {gateway.coords[0]}, {gateway.coords[1]}
-                  </div>
-                </Popup>
-              </Marker>
-            ))}
+            {latestVisible && sortedMarkers.length > 0 && typeof latestMarker?.devLocRadius === 'number' ? (
+              <Circle
+                key={`latest-circle-${latestMarker.id}`}
+                center={latestMarker.coords}
+                radius={latestMarker.devLocRadius}
+                pathOptions={circlePathOptions}
+              />
+            ) : null}
+            {historyVisible
+              ? markers
+                  .filter(p => typeof p.devLocRadius === 'number')
+                  .map(p => (
+                    <Circle
+                      key={`circle-${p.id}`}
+                      center={p.coords}
+                      radius={p.devLocRadius}
+                      pathOptions={circlePathOptions}
+                    />
+                  ))
+              : null}
           </LayerGroup>
         </LayersControl.Overlay>
+
       </LayersControl>
       {/* <ZoomControl position="topright" /> */}
       <div
@@ -570,6 +655,9 @@ export function MapView() {
               />
             </div>
             {lastError ? <div className="text-xs text-red-600">Last error: {lastError}</div> : null}
+            {fixedObjectsError ? (
+              <div className="text-xs text-red-600">Fixed objects: {fixedObjectsError}</div>
+            ) : null}
             <div className="flex gap-2 mt-2">
               {status === 'connected' ? (
                 <Button size="xs" onClick={() => disconnectRef.current?.()} color="light" className="w-full">

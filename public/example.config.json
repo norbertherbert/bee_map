@@ -1,9 +1,6 @@
 {
+  "zoomLevel": 14,
   "mapCenter": [48.8566, 2.3522],
   "mqttUrl": "wss://test.mosquitto.org:8081/mqtt",
-  "mqttTopic": "bee_map/#",
-  "gateways": [
-    { "id": "1", "coords": [48.8566, 2.3522] },
-    { "id": "1", "coords": [48.8576, 2.3622] }
-  ]
+  "mqttTopic": "bee_map/#"
 }

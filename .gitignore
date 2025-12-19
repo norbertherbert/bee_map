@@ -2,6 +2,7 @@
 public/config.json
 backend/.env
 public/config*.json
+public/fixed_objects*.geojson
 __*
 
 # Logs

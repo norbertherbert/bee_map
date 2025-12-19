@@ -1,0 +1,69 @@
+{
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Gw1"
+            },
+            "geometry": {
+                "coordinates": [
+                    2.3522,
+                    48.8566
+                ],
+                "type": "Point"
+            },
+            "id": 0
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Gw2"
+            },
+            "geometry": {
+                "coordinates": [
+                    2.3622,
+                    48.8576
+                ],
+                "type": "Point"
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "Building1"
+            },
+            "geometry": {
+                "coordinates": [
+                    [
+                        [
+                        2.359372496656192,
+                        48.85352091749755
+                        ],
+                        [
+                        2.36224856897789,
+                        48.849955334075815
+                        ],
+                        [
+                        2.3745000576054167,
+                        48.85012079002246
+                        ],
+                        [
+                        2.3737505647088994,
+                        48.85365814059978
+                        ],
+                        [
+                        2.3672492043908733,
+                        48.85182081230954
+                        ],
+                        [
+                        2.359372496656192,
+                        48.85352091749755
+                        ]
+                    ]
+                ],
+                "type": "Polygon"
+            }
+        }
+    ]
+}
