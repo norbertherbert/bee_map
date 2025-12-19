@@ -533,7 +533,7 @@ export function MapView() {
                 data={fixedObjects}
                 onEachFeature={onEachFixedObjectFeature}
                 pointToLayer={pointToLayerFixedObject}
-                style={() => ({ color: '#16a34a', weight: 2, fillColor: '#16a34a', fillOpacity: 0.2 })}
+                style={() => ({ color: '#374151', weight: 2, fillColor: '#374151', fillOpacity: 0.2 })}
               />
             ) : null}
           </LayerGroup>
